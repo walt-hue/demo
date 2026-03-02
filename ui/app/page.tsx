@@ -6,15 +6,84 @@ import {
   SessionProvider,
   useAgent,
   useSession,
+  useSessionMessages,
 } from "@livekit/components-react";
 import { TokenSource, type TokenSourceConfigurable } from "livekit-client";
+import type { ReceivedMessage } from "@livekit/components-core";
 import { useRef, useState, useCallback, useEffect } from "react";
 import "@livekit/components-styles";
 
 const LIVEKIT_URL =
   process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://rime-lx56n42z.livekit.cloud";
 
-function AgentVoiceView({ onDisconnect }: { onDisconnect: () => void }) {
+const VOICES = [
+  { id: "vespera", label: "Vespera", desc: "Warm" },
+  { id: "arcade", label: "Arcade", desc: "Energetic" },
+  { id: "walnut", label: "Walnut", desc: "Calm" },
+] as const;
+
+function VoiceSelector({ activeVoice }: { activeVoice: string }) {
+  return (
+    <div className="voice-selector">
+      <div className="voice-pills">
+        {VOICES.map((v) => (
+          <div
+            key={v.id}
+            className={`voice-pill ${activeVoice === v.id ? "active" : ""}`}
+          >
+            <span className="voice-pill-name">{v.label}</span>
+            <span className="voice-pill-desc">{v.desc}</span>
+          </div>
+        ))}
+      </div>
+      <p className="voice-hint">Say &quot;switch to walnut&quot; to change voice</p>
+    </div>
+  );
+}
+
+function Transcript({ messages }: { messages: ReceivedMessage[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="transcript" ref={scrollRef}>
+        <p className="transcript-empty">Conversation will appear here...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="transcript" ref={scrollRef}>
+      {messages.map((msg) => {
+        if (msg.type === "userTranscript") {
+          return (
+            <div key={msg.id} className="transcript-message user">
+              <span className="transcript-label">You</span>
+              <span className="transcript-text">{msg.message}</span>
+            </div>
+          );
+        }
+        if (msg.type === "agentTranscript") {
+          return (
+            <div key={msg.id} className="transcript-message agent">
+              <span className="transcript-label">Agent</span>
+              <span className="transcript-text">{msg.message}</span>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
+function AgentVoiceView() {
   const agent = useAgent();
 
   const stateLabel =
@@ -29,7 +98,7 @@ function AgentVoiceView({ onDisconnect }: { onDisconnect: () => void }) {
             : agent.state;
 
   return (
-    <div className="voice-view">
+    <div className="agent-area">
       <div className="visualizer-container">
         {agent.microphoneTrack ? (
           <BarVisualizer
@@ -44,22 +113,37 @@ function AgentVoiceView({ onDisconnect }: { onDisconnect: () => void }) {
           </div>
         )}
       </div>
-
       <p className="agent-state">{stateLabel}</p>
-
-      <button className="disconnect-btn" onClick={onDisconnect}>
-        End Call
-      </button>
     </div>
   );
 }
 
 function ActiveSession({ onDisconnect }: { onDisconnect: () => void }) {
   const [micEnabled, setMicEnabled] = useState(true);
+  const { messages } = useSessionMessages();
+  const [activeVoice, setActiveVoice] = useState("vespera");
+
+  // Detect voice switches from agent transcript messages
+  useEffect(() => {
+    const lastAgentMsg = [...messages]
+      .reverse()
+      .find((m) => m.type === "agentTranscript");
+    if (lastAgentMsg && lastAgentMsg.type === "agentTranscript") {
+      const text = lastAgentMsg.message.toLowerCase();
+      for (const v of VOICES) {
+        if (text.includes(`switched to ${v.id}`) || text.includes(`voice switched to ${v.id}`)) {
+          setActiveVoice(v.id);
+          break;
+        }
+      }
+    }
+  }, [messages]);
 
   return (
     <>
-      <AgentVoiceView onDisconnect={onDisconnect} />
+      <VoiceSelector activeVoice={activeVoice} />
+      <AgentVoiceView />
+      <Transcript messages={messages} />
       <div className="controls">
         <button
           className={`mic-btn ${!micEnabled ? "muted" : ""}`}
@@ -81,6 +165,9 @@ function ActiveSession({ onDisconnect }: { onDisconnect: () => void }) {
               <line x1="12" x2="12" y1="19" y2="22" />
             </svg>
           )}
+        </button>
+        <button className="disconnect-btn" onClick={onDisconnect}>
+          End Call
         </button>
       </div>
       <RoomAudioRenderer />
