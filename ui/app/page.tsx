@@ -185,9 +185,8 @@ function SessionWrapper({
   tokenSource: TokenSourceConfigurable;
   onDisconnect: () => void;
 }) {
-  const session = useSession(tokenSource, {
-    roomName: `voice-${Date.now()}`,
-  });
+  const roomName = useRef(`voice-${Date.now()}`).current;
+  const session = useSession(tokenSource, { roomName });
 
   useEffect(() => {
     session.start();
