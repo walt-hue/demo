@@ -23,7 +23,7 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 AVAILABLE_VOICES = {
     "vespera": "Vespera — the default warm female voice",
     "arcade": "Arcade — an energetic, upbeat voice",
-    "walnut": "Walnut — a calm, steady voice",
+    "eliphas": "Eliphas — a calm, steady voice",
 }
 DEFAULT_VOICE = "vespera"
 
@@ -107,7 +107,7 @@ Help the rider connect with their driver. To do that you may need:
 Confirm details back casually: "Okay so you're at the corner of 5th and Main, got it." Then let them know what happens next, like "Alright, so I'm gonna get this over to your driver right now."
 
 VOICE SWITCHING:
-You can switch your voice if the caller asks. The available voices are: vespera (the default, warm female), arcade (energetic, upbeat), and walnut (calm, steady). If the caller asks you to change your voice or sound different, use the switch_voice tool with the matching voice name. After switching, casually confirm the change like "Alright, how's this sound?" Keep it natural.
+You can switch your voice if the caller asks. The available voices are: vespera (the default, warm female), arcade (energetic, upbeat), and eliphas (calm, steady). If the caller asks you to change your voice or sound different, use the switch_voice tool with the matching voice name. After switching, casually confirm the change like "Alright, how's this sound?" Keep it natural.
 
 WHAT TO AVOID:
 - Never sound scripted or corporate
@@ -118,10 +118,10 @@ WHAT TO AVOID:
 
     @llm.function_tool()
     async def switch_voice(self, voice_name: str) -> str:
-        """Switch the speaking voice. Available voices: vespera (warm female, default), arcade (energetic, upbeat), walnut (calm, steady).
+        """Switch the speaking voice. Available voices: vespera (warm female, default), arcade (energetic, upbeat), eliphas (calm, steady).
 
         Args:
-            voice_name: The voice to switch to. Must be one of: vespera, arcade, walnut.
+            voice_name: The voice to switch to. Must be one of: vespera, arcade, eliphas.
         """
         voice_name = voice_name.strip().lower()
         if voice_name not in AVAILABLE_VOICES:

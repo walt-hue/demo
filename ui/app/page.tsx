@@ -19,7 +19,7 @@ const LIVEKIT_URL =
 const VOICES = [
   { id: "vespera", label: "Vespera", desc: "Warm" },
   { id: "arcade", label: "Arcade", desc: "Energetic" },
-  { id: "walnut", label: "Walnut", desc: "Calm" },
+  { id: "eliphas", label: "Eliphas", desc: "Calm" },
 ] as const;
 
 function VoiceSelector({ activeVoice }: { activeVoice: string }) {
@@ -36,7 +36,7 @@ function VoiceSelector({ activeVoice }: { activeVoice: string }) {
           </div>
         ))}
       </div>
-      <p className="voice-hint">Say &quot;switch to walnut&quot; to change voice</p>
+      <p className="voice-hint">Say &quot;switch to eliphas&quot; to change voice</p>
     </div>
   );
 }
