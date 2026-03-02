@@ -187,18 +187,25 @@ function SessionWrapper({
 }) {
   const roomName = useRef(`voice-${Date.now()}`).current;
   const session = useSession(tokenSource, { roomName });
+  const started = useRef(false);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   useEffect(() => {
-    session.start();
+    if (!started.current) {
+      started.current = true;
+      session.start();
+    }
     return () => {
-      session.end();
+      sessionRef.current.end();
     };
-  }, [session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDisconnect = useCallback(() => {
-    session.end();
+    sessionRef.current.end();
     onDisconnect();
-  }, [session, onDisconnect]);
+  }, [onDisconnect]);
 
   return (
     <SessionProvider session={session}>
