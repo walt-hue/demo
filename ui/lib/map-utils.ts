@@ -1,5 +1,7 @@
 import bearing from "@turf/bearing";
-import { point } from "@turf/helpers";
+import along from "@turf/along";
+import length from "@turf/length";
+import { point, lineString } from "@turf/helpers";
 import type {
   PickupLocation,
   DropoffLocation,
@@ -9,11 +11,51 @@ import type {
   RidePhase,
 } from "./ride-types";
 
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
+
+// ═══ Route fetching ═══
+
 /**
- * Generate a simple curved route between pickup and dropoff.
- * Returns a GeoJSON FeatureCollection with a LineString.
+ * Fetch a real driving route from the Mapbox Directions API.
+ * Falls back to a straight line if the API fails.
  */
-export function generateRouteGeoJson(
+export async function fetchRouteGeoJson(
+  pickup: PickupLocation,
+  dropoff: DropoffLocation
+): Promise<GeoJSON.FeatureCollection> {
+  try {
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${pickup.lng},${pickup.lat};${dropoff.lng},${dropoff.lat}?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.code === "Ok" && data.routes?.length > 0) {
+      return {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              distance: data.routes[0].distance, // meters
+              duration: data.routes[0].duration, // seconds
+            },
+            geometry: data.routes[0].geometry,
+          },
+        ],
+      };
+    }
+  } catch {
+    // Fall through to fallback
+  }
+
+  // Fallback: simple straight line
+  return generateFallbackRoute(pickup, dropoff);
+}
+
+/**
+ * Fallback straight-line route (used when Directions API fails).
+ */
+function generateFallbackRoute(
   pickup: PickupLocation,
   dropoff: DropoffLocation
 ): GeoJSON.FeatureCollection {
@@ -24,7 +66,6 @@ export function generateRouteGeoJson(
     const t = i / steps;
     const lat = pickup.lat + (dropoff.lat - pickup.lat) * t;
     const lng = pickup.lng + (dropoff.lng - pickup.lng) * t;
-    // Add slight curve offset for realistic road feel
     const offset = Math.sin(t * Math.PI) * 0.003;
     coords.push([lng + offset, lat]);
   }
@@ -35,17 +76,38 @@ export function generateRouteGeoJson(
       {
         type: "Feature",
         properties: {},
-        geometry: {
-          type: "LineString",
-          coordinates: coords,
-        },
+        geometry: { type: "LineString", coordinates: coords },
       },
     ],
   };
 }
 
+// ═══ Route interpolation (turf-based, for real road geometry) ═══
+
 /**
- * Interpolate a position along a route at a given fraction (0-1).
+ * Pre-compute evenly-spaced points along a route for smooth animation.
+ */
+export function precomputeRoutePoints(
+  routeCoords: [number, number][],
+  steps: number = 500
+): [number, number][] {
+  if (routeCoords.length < 2) return routeCoords;
+
+  const line = lineString(routeCoords);
+  const totalDist = length(line, { units: "kilometers" });
+  const points: [number, number][] = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const dist = (i / steps) * totalDist;
+    const pt = along(line, dist, { units: "kilometers" });
+    points.push(pt.geometry.coordinates as [number, number]);
+  }
+
+  return points;
+}
+
+/**
+ * Interpolate a position along pre-computed route points at a given fraction (0-1).
  */
 export function interpolateAlongRoute(
   coords: [number, number][],
@@ -70,6 +132,8 @@ export function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
+// ═══ Bearing ═══
+
 /**
  * Calculate bearing between two coordinates (0-360 degrees).
  */
@@ -80,9 +144,10 @@ export function calculateBearing(
   const p1 = point([from.lng, from.lat]);
   const p2 = point([to.lng, to.lat]);
   const b = bearing(p1, p2);
-  // Convert from -180..180 to 0..360
   return (b + 360) % 360;
 }
+
+// ═══ Driver info generation ═══
 
 const FIRST_NAMES = [
   "Marcus",
@@ -116,9 +181,6 @@ function randomItem<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/**
- * Generate a random fake driver profile.
- */
 export function generateDriverInfo(): DriverInfo {
   const letters = "ABCDEFGHJKLMNPRSTUVWXYZ";
   const plate = `${letters[Math.floor(Math.random() * letters.length)]}${letters[Math.floor(Math.random() * letters.length)]}${letters[Math.floor(Math.random() * letters.length)]} ${Math.floor(1000 + Math.random() * 9000)}`;
@@ -132,10 +194,8 @@ export function generateDriverInfo(): DriverInfo {
   };
 }
 
-/**
- * Get the camera config for a given ride phase.
- * Designed for dramatic cinematic 3D effect.
- */
+// ═══ Camera configs ═══
+
 export function getCameraForPhase(
   phase: RidePhase,
   pickup: PickupLocation | null,
@@ -196,7 +256,6 @@ export function getCameraForPhase(
       };
 
     case "in_ride":
-      // Chase cam is handled continuously, this is the initial transition
       if (!driver) return null;
       return {
         center: [driver.lng, driver.lat],
@@ -219,4 +278,123 @@ export function getCameraForPhase(
     default:
       return null;
   }
+}
+
+// ═══ Car icon rendering ═══
+
+/**
+ * Render a car icon to a canvas ImageData for use with map.addImage().
+ * Returns an ImageData object that Mapbox GL can use.
+ */
+export function renderCarIcon(size: number = 96): ImageData {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const scale = size / 96;
+
+  // Outer glow
+  const glow = ctx.createRadialGradient(cx, cy, 10 * scale, cx, cy, 44 * scale);
+  glow.addColorStop(0, "rgba(31, 213, 249, 0.35)");
+  glow.addColorStop(0.6, "rgba(31, 213, 249, 0.1)");
+  glow.addColorStop(1, "rgba(31, 213, 249, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 44 * scale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Car body shadow
+  ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+  ctx.beginPath();
+  ctx.ellipse(cx + 1 * scale, cy + 2 * scale, 16 * scale, 24 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Car body
+  ctx.fillStyle = "#1FD5F9";
+  ctx.beginPath();
+  ctx.roundRect(cx - 14 * scale, cy - 22 * scale, 28 * scale, 44 * scale, 10 * scale);
+  ctx.fill();
+
+  // Body highlight (left side)
+  ctx.fillStyle = "rgba(77, 228, 255, 0.3)";
+  ctx.beginPath();
+  ctx.roundRect(cx - 12 * scale, cy - 22 * scale, 12 * scale, 44 * scale, 8 * scale);
+  ctx.fill();
+
+  // Windshield
+  ctx.fillStyle = "#0A7A99";
+  ctx.beginPath();
+  ctx.roundRect(cx - 10 * scale, cy - 18 * scale, 20 * scale, 12 * scale, 4 * scale);
+  ctx.fill();
+
+  // Rear window
+  ctx.fillStyle = "#0A7A99";
+  ctx.beginPath();
+  ctx.roundRect(cx - 10 * scale, cy + 8 * scale, 20 * scale, 10 * scale, 4 * scale);
+  ctx.fill();
+
+  // Wheels (dark)
+  ctx.fillStyle = "#0D9BBD";
+  const wheelPositions = [
+    [-18, -10], [14, -10],  // front wheels
+    [-18, 6], [14, 6],      // rear wheels
+  ];
+  for (const [wx, wy] of wheelPositions) {
+    ctx.beginPath();
+    ctx.roundRect(
+      cx + wx * scale,
+      cy + wy * scale,
+      5 * scale,
+      8 * scale,
+      2.5 * scale
+    );
+    ctx.fill();
+  }
+
+  // Headlights (bright white)
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.arc(cx - 7 * scale, cy - 21 * scale, 3 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 7 * scale, cy - 21 * scale, 3 * scale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Headlight glow
+  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.beginPath();
+  ctx.arc(cx - 7 * scale, cy - 21 * scale, 6 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 7 * scale, cy - 21 * scale, 6 * scale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Taillights
+  ctx.fillStyle = "#FF3333";
+  ctx.beginPath();
+  ctx.roundRect(cx - 9 * scale, cy + 18 * scale, 7 * scale, 3 * scale, 1.5 * scale);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(cx + 2 * scale, cy + 18 * scale, 7 * scale, 3 * scale, 1.5 * scale);
+  ctx.fill();
+
+  // Taillight glow
+  ctx.fillStyle = "rgba(255, 51, 51, 0.2)";
+  ctx.beginPath();
+  ctx.roundRect(cx - 11 * scale, cy + 16 * scale, 10 * scale, 7 * scale, 3 * scale);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(cx + 1 * scale, cy + 16 * scale, 10 * scale, 7 * scale, 3 * scale);
+  ctx.fill();
+
+  // Roof detail
+  ctx.fillStyle = "#15B8D6";
+  ctx.beginPath();
+  ctx.roundRect(cx - 7 * scale, cy - 4 * scale, 14 * scale, 10 * scale, 4 * scale);
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
 }

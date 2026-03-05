@@ -55,6 +55,8 @@ export interface RideState {
   dropoff: DropoffLocation | null;
   driver: DriverState | null;
   driverInfo: DriverInfo | null;
+  routeGeoJson: GeoJSON.FeatureCollection | null;
+  routePoints: [number, number][] | null;
 }
 
 export interface MapUpdateMessage {

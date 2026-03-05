@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useMemo, useCallback } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import Map, {
   Marker,
   Source,
@@ -9,7 +9,7 @@ import Map, {
 } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { RideState, RidePhase } from "@/lib/ride-types";
-import { generateRouteGeoJson, getCameraForPhase } from "@/lib/map-utils";
+import { getCameraForPhase, renderCarIcon } from "@/lib/map-utils";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -28,34 +28,41 @@ interface MapViewProps {
 
 export function MapView({ rideState, dimmed }: MapViewProps) {
   const mapRef = useRef<MapRef>(null);
-  const { pickup, dropoff, driver, phase } = rideState;
+  const { pickup, dropoff, driver, phase, routeGeoJson } = rideState;
   const prevPhaseRef = useRef<RidePhase>("idle");
   const mapLoadedRef = useRef(false);
+  const carImageAddedRef = useRef(false);
 
-  const routeGeoJson = useMemo(() => {
-    if (pickup && dropoff) {
-      return generateRouteGeoJson(pickup, dropoff);
-    }
-    return null;
-  }, [pickup, dropoff]);
+  // GeoJSON for the car symbol layer
+  const carGeoJson: GeoJSON.Feature | null =
+    driver && driver.status !== "completed"
+      ? {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [driver.lng, driver.lat],
+          },
+          properties: {
+            bearing: driver.bearing,
+          },
+        }
+      : null;
 
-  // Configure 3D buildings, night lighting, fog, and hide POI labels
+  // Configure 3D buildings, night lighting, fog, and add car icon
   const handleMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (!map) return;
     mapLoadedRef.current = true;
 
     try {
-      // Night preset for maximum 3D building contrast
       map.setConfigProperty("basemap", "lightPreset", "night");
-      // Hide POI labels to declutter
       map.setConfigProperty("basemap", "showPointOfInterestLabels", false);
       map.setConfigProperty("basemap", "showTransitLabels", false);
     } catch {
       // Fallback for older Mapbox versions
     }
 
-    // Atmospheric fog for cinematic depth
+    // Atmospheric fog
     try {
       map.setFog({
         color: "rgb(10, 10, 30)",
@@ -66,6 +73,17 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
       });
     } catch {
       // Fog not supported
+    }
+
+    // Render and add car icon image for symbol layer
+    if (!carImageAddedRef.current) {
+      try {
+        const imageData = renderCarIcon(128);
+        map.addImage("car-icon", imageData, { sdf: false });
+        carImageAddedRef.current = true;
+      } catch {
+        // Image already exists or canvas not available
+      }
     }
   }, []);
 
@@ -81,7 +99,6 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
     if (!cam) return;
 
     if (phase === "route_set" && pickup && dropoff) {
-      // Fit bounds for route overview
       const lngs = [pickup.lng, dropoff.lng];
       const lats = [pickup.lat, dropoff.lat];
       map.fitBounds(
@@ -147,16 +164,12 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             anchor="center"
           >
             <div className="relative flex items-center justify-center">
-              {/* Outer pulse ring */}
               <div className="pickup-pulse absolute h-16 w-16 rounded-full border-2 border-emerald-400/60" />
-              {/* Middle pulse ring */}
               <div
                 className="pickup-pulse absolute h-12 w-12 rounded-full bg-emerald-400/20"
                 style={{ animationDelay: "0.5s" }}
               />
-              {/* Glow halo */}
               <div className="absolute h-8 w-8 rounded-full bg-emerald-400/30 blur-md" />
-              {/* Core dot */}
               <div className="relative h-5 w-5 rounded-full border-[3px] border-white bg-emerald-400 shadow-[0_0_16px_4px_rgba(52,211,153,0.5)]" />
             </div>
           </Marker>
@@ -170,210 +183,37 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             anchor="bottom"
           >
             <div className="flex flex-col items-center">
-              {/* Glow behind */}
               <div className="absolute -top-1 h-10 w-10 rounded-full bg-red-500/25 blur-lg" />
-              {/* Pin head */}
               <div className="relative h-8 w-8 rounded-full border-[3px] border-white bg-red-500 shadow-[0_0_20px_6px_rgba(239,68,68,0.4)]">
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="h-2 w-2 rounded-full bg-white/80" />
                 </div>
               </div>
-              {/* Pin stem */}
               <div className="h-4 w-1 rounded-b-full bg-gradient-to-b from-white/80 to-white/20" />
             </div>
           </Marker>
         )}
 
-        {/* ═══ CAR MARKER ═══ */}
-        {driver && driver.status !== "completed" && (
-          <Marker
-            longitude={driver.lng}
-            latitude={driver.lat}
-            anchor="center"
-          >
-            <div
-              className="car-marker relative flex items-center justify-center"
-              style={{
-                transform: `rotate(${driver.bearing}deg)`,
-                width: 64,
-                height: 64,
+        {/* ═══ CAR — WebGL symbol layer ═══ */}
+        {carGeoJson && (
+          <Source id="car" type="geojson" data={carGeoJson}>
+            <Layer
+              id="car-layer"
+              type="symbol"
+              layout={{
+                "icon-image": "car-icon",
+                "icon-size": 0.5,
+                "icon-rotate": ["get", "bearing"],
+                "icon-rotation-alignment": "map",
+                "icon-pitch-alignment": "map",
+                "icon-allow-overlap": true,
+                "icon-ignore-placement": true,
               }}
-            >
-              {/* Large glow halo */}
-              <div className="car-glow absolute inset-0 rounded-full bg-cyan-400/10 blur-xl" />
-              {/* Medium glow */}
-              <div className="absolute inset-2 rounded-full bg-cyan-400/15 blur-md" />
-
-              {/* Car SVG — larger, more detailed */}
-              <svg
-                width="48"
-                height="48"
-                viewBox="0 0 48 48"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="relative drop-shadow-[0_0_12px_rgba(31,213,249,0.6)]"
-              >
-                {/* Shadow under car */}
-                <ellipse
-                  cx="24"
-                  cy="24"
-                  rx="14"
-                  ry="18"
-                  fill="black"
-                  opacity="0.3"
-                />
-                {/* Car body */}
-                <rect
-                  x="12"
-                  y="4"
-                  width="24"
-                  height="40"
-                  rx="8"
-                  fill="#1FD5F9"
-                />
-                {/* Body highlight */}
-                <rect
-                  x="14"
-                  y="4"
-                  width="10"
-                  height="40"
-                  rx="6"
-                  fill="#4DE4FF"
-                  opacity="0.3"
-                />
-                {/* Windshield */}
-                <rect
-                  x="15"
-                  y="8"
-                  width="18"
-                  height="10"
-                  rx="4"
-                  fill="#0A7A99"
-                />
-                {/* Windshield reflection */}
-                <rect
-                  x="17"
-                  y="9"
-                  width="8"
-                  height="5"
-                  rx="2"
-                  fill="#1FD5F9"
-                  opacity="0.3"
-                />
-                {/* Rear window */}
-                <rect
-                  x="15"
-                  y="30"
-                  width="18"
-                  height="9"
-                  rx="4"
-                  fill="#0A7A99"
-                />
-                {/* Left wheel well */}
-                <rect
-                  x="8"
-                  y="12"
-                  width="5"
-                  height="8"
-                  rx="2.5"
-                  fill="#0D9BBD"
-                />
-                {/* Right wheel well */}
-                <rect
-                  x="35"
-                  y="12"
-                  width="5"
-                  height="8"
-                  rx="2.5"
-                  fill="#0D9BBD"
-                />
-                {/* Left rear wheel */}
-                <rect
-                  x="8"
-                  y="28"
-                  width="5"
-                  height="8"
-                  rx="2.5"
-                  fill="#0D9BBD"
-                />
-                {/* Right rear wheel */}
-                <rect
-                  x="35"
-                  y="28"
-                  width="5"
-                  height="8"
-                  rx="2.5"
-                  fill="#0D9BBD"
-                />
-                {/* Headlights */}
-                <circle cx="17" cy="6" r="2.5" fill="#FFFFFF" />
-                <circle cx="31" cy="6" r="2.5" fill="#FFFFFF" />
-                {/* Headlight glow */}
-                <circle
-                  cx="17"
-                  cy="6"
-                  r="4"
-                  fill="#FFFFFF"
-                  opacity="0.15"
-                />
-                <circle
-                  cx="31"
-                  cy="6"
-                  r="4"
-                  fill="#FFFFFF"
-                  opacity="0.15"
-                />
-                {/* Taillights */}
-                <rect
-                  x="14"
-                  y="41"
-                  width="6"
-                  height="3"
-                  rx="1.5"
-                  fill="#FF3333"
-                />
-                <rect
-                  x="28"
-                  y="41"
-                  width="6"
-                  height="3"
-                  rx="1.5"
-                  fill="#FF3333"
-                />
-                {/* Taillight glow */}
-                <rect
-                  x="13"
-                  y="40"
-                  width="8"
-                  height="5"
-                  rx="2"
-                  fill="#FF3333"
-                  opacity="0.2"
-                />
-                <rect
-                  x="27"
-                  y="40"
-                  width="8"
-                  height="5"
-                  rx="2"
-                  fill="#FF3333"
-                  opacity="0.2"
-                />
-                {/* Roof detail */}
-                <rect
-                  x="18"
-                  y="20"
-                  width="12"
-                  height="8"
-                  rx="3"
-                  fill="#15B8D6"
-                />
-              </svg>
-            </div>
-          </Marker>
+            />
+          </Source>
         )}
 
-        {/* ═══ ROUTE GLOW — 3 overlapping layers ═══ */}
+        {/* ═══ ROUTE GLOW — 4 overlapping layers ═══ */}
         {routeGeoJson && (
           <Source
             id="route"

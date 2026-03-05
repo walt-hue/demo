@@ -9,7 +9,8 @@ import type {
   MapUpdateMessage,
 } from "@/lib/ride-types";
 import {
-  generateRouteGeoJson,
+  fetchRouteGeoJson,
+  precomputeRoutePoints,
   interpolateAlongRoute,
   easeInOut,
   calculateBearing,
@@ -37,6 +38,11 @@ type RideAction =
   | { type: "START_RIDE" }
   | { type: "COMPLETE_RIDE" }
   | { type: "UPDATE_DRIVER_POSITION"; lat: number; lng: number }
+  | {
+      type: "SET_ROUTE";
+      routeGeoJson: GeoJSON.FeatureCollection;
+      routePoints: [number, number][];
+    }
   | { type: "RESET" };
 
 const initialState: RideState = {
@@ -45,6 +51,8 @@ const initialState: RideState = {
   dropoff: null,
   driver: null,
   driverInfo: null,
+  routeGeoJson: null,
+  routePoints: null,
 };
 
 function rideReducer(state: RideState, action: RideAction): RideState {
@@ -57,6 +65,12 @@ function rideReducer(state: RideState, action: RideAction): RideState {
         dropoff: action.data,
         phase: state.pickup ? "route_set" : state.phase,
       };
+    case "SET_ROUTE":
+      return {
+        ...state,
+        routeGeoJson: action.routeGeoJson,
+        routePoints: action.routePoints,
+      };
     case "UPDATE_DRIVER": {
       const driverStatus = action.data.status as DriverState["status"];
       let phase: RidePhase = state.phase;
@@ -67,8 +81,9 @@ function rideReducer(state: RideState, action: RideAction): RideState {
       // Calculate bearing from previous driver position
       let newBearing = state.driver?.bearing ?? 0;
       if (state.driver) {
-        const dist = Math.abs(action.data.lat - state.driver.lat) +
-                     Math.abs(action.data.lng - state.driver.lng);
+        const dist =
+          Math.abs(action.data.lat - state.driver.lat) +
+          Math.abs(action.data.lng - state.driver.lng);
         if (dist > 0.00001) {
           newBearing = calculateBearing(
             { lat: state.driver.lat, lng: state.driver.lng },
@@ -114,10 +129,10 @@ function rideReducer(state: RideState, action: RideAction): RideState {
       };
     case "UPDATE_DRIVER_POSITION": {
       if (!state.driver) return state;
-      // Calculate bearing from previous position
       let newBearing = state.driver.bearing;
-      const dist = Math.abs(action.lat - state.driver.lat) +
-                   Math.abs(action.lng - state.driver.lng);
+      const dist =
+        Math.abs(action.lat - state.driver.lat) +
+        Math.abs(action.lng - state.driver.lng);
       if (dist > 0.00001) {
         newBearing = calculateBearing(
           { lat: state.driver.lat, lng: state.driver.lng },
@@ -179,15 +194,39 @@ export function useRideState() {
     }
   }, []);
 
+  // Fetch real route from Mapbox Directions API when both pickup and dropoff are set
+  useEffect(() => {
+    if (!state.pickup || !state.dropoff) return;
+    if (state.routeGeoJson) return; // Already fetched
+
+    let cancelled = false;
+
+    fetchRouteGeoJson(state.pickup, state.dropoff).then((geojson) => {
+      if (cancelled) return;
+
+      const coords = (
+        geojson.features[0].geometry as GeoJSON.LineString
+      ).coordinates as [number, number][];
+
+      const routePoints = precomputeRoutePoints(coords, 500);
+
+      dispatch({
+        type: "SET_ROUTE",
+        routeGeoJson: geojson,
+        routePoints,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.pickup, state.dropoff, state.routeGeoJson]);
+
   // Animate driver along route when ride is in progress
   useEffect(() => {
-    if (state.phase !== "in_ride" || !state.pickup || !state.dropoff) return;
+    if (state.phase !== "in_ride" || !state.routePoints) return;
 
-    const route = generateRouteGeoJson(state.pickup, state.dropoff);
-    const coords = (
-      route.features[0].geometry as GeoJSON.LineString
-    ).coordinates as [number, number][];
-
+    const points = state.routePoints;
     const RIDE_DURATION_MS = 30_000;
     const startTime = Date.now();
 
@@ -196,7 +235,7 @@ export function useRideState() {
       const progress = Math.min(elapsed / RIDE_DURATION_MS, 1);
       const eased = easeInOut(progress);
 
-      const pos = interpolateAlongRoute(coords, eased);
+      const pos = interpolateAlongRoute(points, eased);
       dispatch({
         type: "UPDATE_DRIVER_POSITION",
         lat: pos.lat,
@@ -210,7 +249,7 @@ export function useRideState() {
 
     animFrameRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [state.phase, state.pickup, state.dropoff]);
+  }, [state.phase, state.routePoints]);
 
   return { rideState: state, handleMapMessage, dispatch };
 }
