@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useEffect, useMemo, useCallback } from "react";
-import mapboxgl from "mapbox-gl";
 import Map, {
   Marker,
   Source,
@@ -123,7 +122,6 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
         antialias={true}
         onLoad={handleMapLoad}
         maxPitch={85}
-        projection={{ name: "globe" } as mapboxgl.ProjectionSpecification}
       >
         {/* Pickup marker — green pulsing dot */}
         {pickup && (
