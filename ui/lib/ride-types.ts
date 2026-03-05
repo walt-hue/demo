@@ -21,6 +21,23 @@ export interface DriverState {
   lat: number;
   lng: number;
   eta_minutes: number;
+  bearing: number;
+}
+
+export interface DriverInfo {
+  name: string;
+  carModel: string;
+  carColor: string;
+  licensePlate: string;
+  rating: number;
+}
+
+export interface CameraState {
+  center: [number, number];
+  zoom: number;
+  pitch: number;
+  bearing: number;
+  duration: number;
 }
 
 export type RidePhase =
@@ -37,6 +54,7 @@ export interface RideState {
   pickup: PickupLocation | null;
   dropoff: DropoffLocation | null;
   driver: DriverState | null;
+  driverInfo: DriverInfo | null;
 }
 
 export interface MapUpdateMessage {

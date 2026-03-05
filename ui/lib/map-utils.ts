@@ -1,4 +1,13 @@
-import type { PickupLocation, DropoffLocation } from "./ride-types";
+import bearing from "@turf/bearing";
+import { point } from "@turf/helpers";
+import type {
+  PickupLocation,
+  DropoffLocation,
+  DriverState,
+  DriverInfo,
+  CameraState,
+  RidePhase,
+} from "./ride-types";
 
 /**
  * Generate a simple curved route between pickup and dropoff.
@@ -8,7 +17,7 @@ export function generateRouteGeoJson(
   pickup: PickupLocation,
   dropoff: DropoffLocation
 ): GeoJSON.FeatureCollection {
-  const steps = 20;
+  const steps = 40;
   const coords: [number, number][] = [];
 
   for (let i = 0; i <= steps; i++) {
@@ -59,4 +68,154 @@ export function interpolateAlongRoute(
  */
 export function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+/**
+ * Calculate bearing between two coordinates (0-360 degrees).
+ */
+export function calculateBearing(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number }
+): number {
+  const p1 = point([from.lng, from.lat]);
+  const p2 = point([to.lng, to.lat]);
+  const b = bearing(p1, p2);
+  // Convert from -180..180 to 0..360
+  return (b + 360) % 360;
+}
+
+const FIRST_NAMES = [
+  "Marcus",
+  "Priya",
+  "Carlos",
+  "Elena",
+  "Jamal",
+  "Mei",
+  "André",
+  "Sofia",
+];
+const LAST_INITIALS = ["R", "K", "L", "M", "T", "S", "W", "J"];
+const CAR_MODELS = [
+  "Tesla Model 3",
+  "Toyota Camry",
+  "Honda Accord",
+  "BMW 3 Series",
+  "Hyundai Ioniq 5",
+  "Mercedes C-Class",
+];
+const CAR_COLORS = [
+  "Black",
+  "White",
+  "Silver",
+  "Midnight Blue",
+  "Pearl White",
+  "Space Gray",
+];
+
+function randomItem<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/**
+ * Generate a random fake driver profile.
+ */
+export function generateDriverInfo(): DriverInfo {
+  const letters = "ABCDEFGHJKLMNPRSTUVWXYZ";
+  const plate = `${letters[Math.floor(Math.random() * letters.length)]}${letters[Math.floor(Math.random() * letters.length)]}${letters[Math.floor(Math.random() * letters.length)]} ${Math.floor(1000 + Math.random() * 9000)}`;
+
+  return {
+    name: `${randomItem(FIRST_NAMES)} ${randomItem(LAST_INITIALS)}.`,
+    carModel: randomItem(CAR_MODELS),
+    carColor: randomItem(CAR_COLORS),
+    licensePlate: plate,
+    rating: parseFloat((4.7 + Math.random() * 0.3).toFixed(1)),
+  };
+}
+
+/**
+ * Get the camera config for a given ride phase.
+ */
+export function getCameraForPhase(
+  phase: RidePhase,
+  pickup: PickupLocation | null,
+  dropoff: DropoffLocation | null,
+  driver: DriverState | null
+): CameraState | null {
+  switch (phase) {
+    case "idle":
+      return {
+        center: [-122.4194, 37.7749],
+        zoom: 13,
+        pitch: 0,
+        bearing: 0,
+        duration: 2000,
+      };
+
+    case "pickup_set":
+      if (!pickup) return null;
+      return {
+        center: [pickup.lng, pickup.lat],
+        zoom: 16,
+        pitch: 45,
+        bearing: -20,
+        duration: 2000,
+      };
+
+    case "route_set":
+      if (!pickup || !dropoff) return null;
+      return {
+        center: [
+          (pickup.lng + dropoff.lng) / 2,
+          (pickup.lat + dropoff.lat) / 2,
+        ],
+        zoom: 14,
+        pitch: 30,
+        bearing: 0,
+        duration: 2000,
+      };
+
+    case "driver_assigned":
+      if (!pickup) return null;
+      return {
+        center: [pickup.lng, pickup.lat],
+        zoom: 15.5,
+        pitch: 45,
+        bearing: -10,
+        duration: 1500,
+      };
+
+    case "driver_arriving":
+      if (!driver) return null;
+      return {
+        center: [driver.lng, driver.lat],
+        zoom: 16.5,
+        pitch: 50,
+        bearing: driver.bearing,
+        duration: 1200,
+      };
+
+    case "in_ride":
+      // Chase cam is handled continuously, this is the initial transition
+      if (!driver) return null;
+      return {
+        center: [driver.lng, driver.lat],
+        zoom: 17,
+        pitch: 60,
+        bearing: driver.bearing,
+        duration: 1500,
+      };
+
+    case "completed":
+      if (!dropoff) return null;
+      return {
+        center: [dropoff.lng, dropoff.lat],
+        zoom: 15,
+        pitch: 30,
+        bearing: 0,
+        duration: 2000,
+      };
+
+    default:
+      return null;
+  }
 }

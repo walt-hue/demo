@@ -5,12 +5,15 @@ import type {
   RideState,
   RidePhase,
   DriverState,
+  DriverInfo,
   MapUpdateMessage,
 } from "@/lib/ride-types";
 import {
   generateRouteGeoJson,
   interpolateAlongRoute,
   easeInOut,
+  calculateBearing,
+  generateDriverInfo,
 } from "@/lib/map-utils";
 
 type RideAction =
@@ -41,6 +44,7 @@ const initialState: RideState = {
   pickup: null,
   dropoff: null,
   driver: null,
+  driverInfo: null,
 };
 
 function rideReducer(state: RideState, action: RideAction): RideState {
@@ -59,6 +63,26 @@ function rideReducer(state: RideState, action: RideAction): RideState {
       if (driverStatus === "en_route") phase = "driver_assigned";
       else if (driverStatus === "arriving") phase = "driver_arriving";
       else if (driverStatus === "waiting") phase = "driver_arriving";
+
+      // Calculate bearing from previous driver position
+      let newBearing = state.driver?.bearing ?? 0;
+      if (state.driver) {
+        const dist = Math.abs(action.data.lat - state.driver.lat) +
+                     Math.abs(action.data.lng - state.driver.lng);
+        if (dist > 0.00001) {
+          newBearing = calculateBearing(
+            { lat: state.driver.lat, lng: state.driver.lng },
+            { lat: action.data.lat, lng: action.data.lng }
+          );
+        }
+      }
+
+      // Generate driver info on first en_route update
+      let driverInfo: DriverInfo | null = state.driverInfo;
+      if (driverStatus === "en_route" && !state.driverInfo) {
+        driverInfo = generateDriverInfo();
+      }
+
       return {
         ...state,
         driver: {
@@ -66,7 +90,9 @@ function rideReducer(state: RideState, action: RideAction): RideState {
           lat: action.data.lat,
           lng: action.data.lng,
           eta_minutes: action.data.eta_minutes,
+          bearing: newBearing,
         },
+        driverInfo,
         phase,
       };
     }
@@ -86,13 +112,28 @@ function rideReducer(state: RideState, action: RideAction): RideState {
           ? { ...state.driver, status: "completed" }
           : null,
       };
-    case "UPDATE_DRIVER_POSITION":
-      return state.driver
-        ? {
-            ...state,
-            driver: { ...state.driver, lat: action.lat, lng: action.lng },
-          }
-        : state;
+    case "UPDATE_DRIVER_POSITION": {
+      if (!state.driver) return state;
+      // Calculate bearing from previous position
+      let newBearing = state.driver.bearing;
+      const dist = Math.abs(action.lat - state.driver.lat) +
+                   Math.abs(action.lng - state.driver.lng);
+      if (dist > 0.00001) {
+        newBearing = calculateBearing(
+          { lat: state.driver.lat, lng: state.driver.lng },
+          { lat: action.lat, lng: action.lng }
+        );
+      }
+      return {
+        ...state,
+        driver: {
+          ...state.driver,
+          lat: action.lat,
+          lng: action.lng,
+          bearing: newBearing,
+        },
+      };
+    }
     case "RESET":
       return initialState;
     default:

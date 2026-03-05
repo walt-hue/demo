@@ -14,12 +14,53 @@ body {
   color: var(--color-foreground);
 }
 
-/* MapLibre overrides */
-.maplibregl-canvas {
+/* Mapbox GL overrides */
+.mapboxgl-canvas {
   outline: none;
 }
 
-.maplibregl-ctrl-bottom-left,
-.maplibregl-ctrl-bottom-right {
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-bottom-right {
   display: none;
+}
+
+.mapboxgl-ctrl-attrib {
+  display: none !important;
+}
+
+/* Car marker smooth rotation */
+.car-marker {
+  transition: transform 0.3s ease-out;
+  will-change: transform;
+}
+
+/* Car glow pulse */
+@keyframes car-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 12px 4px rgba(31, 213, 249, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px 8px rgba(31, 213, 249, 0.5);
+  }
+}
+
+.car-glow {
+  animation: car-glow 2s ease-in-out infinite;
+}
+
+/* Pickup pulse */
+@keyframes pickup-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.pickup-pulse {
+  animation: pickup-pulse 2s ease-out infinite;
 }

@@ -1,18 +1,25 @@
 "use client";
 
-import { useRef, useEffect, useMemo } from "react";
-import Map, { Marker, Source, Layer, type MapRef } from "react-map-gl/maplibre";
-import "maplibre-gl/dist/maplibre-gl.css";
-import type { RideState } from "@/lib/ride-types";
-import { generateRouteGeoJson } from "@/lib/map-utils";
+import { useRef, useEffect, useMemo, useCallback } from "react";
+import mapboxgl from "mapbox-gl";
+import Map, {
+  Marker,
+  Source,
+  Layer,
+  type MapRef,
+} from "react-map-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
+import type { RideState, RidePhase } from "@/lib/ride-types";
+import { generateRouteGeoJson, getCameraForPhase } from "@/lib/map-utils";
 
-const DARK_STYLE =
-  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
 const INITIAL_VIEW = {
   longitude: -122.4194,
   latitude: 37.7749,
   zoom: 13,
+  pitch: 0,
+  bearing: 0,
 };
 
 interface MapViewProps {
@@ -22,7 +29,9 @@ interface MapViewProps {
 
 export function MapView({ rideState, dimmed }: MapViewProps) {
   const mapRef = useRef<MapRef>(null);
-  const { pickup, dropoff, driver } = rideState;
+  const { pickup, dropoff, driver, phase } = rideState;
+  const prevPhaseRef = useRef<RidePhase>("idle");
+  const mapLoadedRef = useRef(false);
 
   const routeGeoJson = useMemo(() => {
     if (pickup && dropoff) {
@@ -31,33 +40,73 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
     return null;
   }, [pickup, dropoff]);
 
-  // Fit map bounds when markers change
+  // Configure 3D buildings and dusk lighting on map load
+  const handleMapLoad = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    mapLoadedRef.current = true;
+
+    // Set dusk lighting for dramatic dark look
+    try {
+      map.setConfigProperty("basemap", "lightPreset", "dusk");
+    } catch {
+      // Fallback if config properties not supported
+    }
+  }, []);
+
+  // Cinematic camera transitions on phase change
   useEffect(() => {
-    if (!mapRef.current) return;
+    const map = mapRef.current?.getMap();
+    if (!map || !mapLoadedRef.current) return;
+    if (phase === prevPhaseRef.current) return;
 
-    const points: [number, number][] = [];
-    if (pickup) points.push([pickup.lng, pickup.lat]);
-    if (dropoff) points.push([dropoff.lng, dropoff.lat]);
-    if (driver) points.push([driver.lng, driver.lat]);
+    prevPhaseRef.current = phase;
 
-    if (points.length >= 2) {
-      const lngs = points.map((p) => p[0]);
-      const lats = points.map((p) => p[1]);
-      mapRef.current.fitBounds(
+    const cam = getCameraForPhase(phase, pickup, dropoff, driver);
+    if (!cam) return;
+
+    if (phase === "route_set" && pickup && dropoff) {
+      // Fit bounds for route overview
+      const lngs = [pickup.lng, dropoff.lng];
+      const lats = [pickup.lat, dropoff.lat];
+      map.fitBounds(
         [
-          [Math.min(...lngs), Math.min(...lats)],
-          [Math.max(...lngs), Math.max(...lats)],
+          [Math.min(...lngs) - 0.005, Math.min(...lats) - 0.005],
+          [Math.max(...lngs) + 0.005, Math.max(...lats) + 0.005],
         ],
-        { padding: 80, duration: 1000 }
+        {
+          padding: { top: 120, bottom: 120, left: 60, right: 60 },
+          pitch: cam.pitch,
+          bearing: cam.bearing,
+          duration: cam.duration,
+        }
       );
-    } else if (points.length === 1) {
-      mapRef.current.flyTo({
-        center: points[0],
-        zoom: 15,
-        duration: 1000,
+    } else {
+      map.flyTo({
+        center: cam.center,
+        zoom: cam.zoom,
+        pitch: cam.pitch,
+        bearing: cam.bearing,
+        duration: cam.duration,
+        essential: true,
       });
     }
-  }, [pickup, dropoff, driver?.lat, driver?.lng]);
+  }, [phase, pickup, dropoff, driver]);
+
+  // Chase cam — continuously track the car during in_ride
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !mapLoadedRef.current) return;
+    if (phase !== "in_ride" || !driver) return;
+
+    map.easeTo({
+      center: [driver.lng, driver.lat],
+      bearing: driver.bearing,
+      pitch: 60,
+      zoom: 17,
+      duration: 300,
+    });
+  }, [phase, driver?.lat, driver?.lng, driver?.bearing]);
 
   return (
     <div
@@ -67,21 +116,30 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
       <Map
         ref={mapRef}
         initialViewState={INITIAL_VIEW}
-        mapStyle={DARK_STYLE}
+        mapboxAccessToken={MAPBOX_TOKEN}
+        mapStyle="mapbox://styles/mapbox/standard"
         style={{ width: "100%", height: "100%" }}
         attributionControl={false}
+        antialias={true}
+        onLoad={handleMapLoad}
+        maxPitch={85}
+        projection={{ name: "globe" } as mapboxgl.ProjectionSpecification}
       >
-        {/* Pickup marker */}
+        {/* Pickup marker — green pulsing dot */}
         {pickup && (
-          <Marker longitude={pickup.lng} latitude={pickup.lat} anchor="center">
+          <Marker
+            longitude={pickup.lng}
+            latitude={pickup.lat}
+            anchor="center"
+          >
             <div className="relative flex items-center justify-center">
-              <div className="absolute h-8 w-8 animate-ping rounded-full bg-green-500/30" />
-              <div className="h-4 w-4 rounded-full border-2 border-white bg-green-500 shadow-lg" />
+              <div className="pickup-pulse absolute h-8 w-8 rounded-full bg-emerald-400/40" />
+              <div className="h-4 w-4 rounded-full border-2 border-white bg-emerald-400 shadow-lg shadow-emerald-400/50" />
             </div>
           </Marker>
         )}
 
-        {/* Dropoff marker */}
+        {/* Dropoff marker — red pin with glow */}
         {dropoff && (
           <Marker
             longitude={dropoff.lng}
@@ -89,50 +147,128 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             anchor="bottom"
           >
             <div className="flex flex-col items-center">
-              <div className="h-6 w-6 rounded-full border-2 border-white bg-red-500 shadow-lg" />
-              <div className="h-2 w-0.5 bg-white/60" />
+              <div className="h-6 w-6 rounded-full border-2 border-white bg-red-500 shadow-lg shadow-red-500/50" />
+              <div className="h-3 w-0.5 bg-white/60" />
             </div>
           </Marker>
         )}
 
-        {/* Driver marker */}
+        {/* Car marker — top-down car SVG with rotation */}
         {driver && driver.status !== "completed" && (
           <Marker
             longitude={driver.lng}
             latitude={driver.lat}
             anchor="center"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-lg">
+            <div
+              className="car-marker car-glow flex items-center justify-center rounded-full"
+              style={{
+                transform: `rotate(${driver.bearing}deg)`,
+                width: 40,
+                height: 40,
+              }}
+            >
               <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
+                width="32"
+                height="32"
+                viewBox="0 0 32 32"
                 fill="none"
-                stroke="#000"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                xmlns="http://www.w3.org/2000/svg"
               >
-                <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
-                <path d="M15 18H9" />
-                <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
-                <circle cx="17" cy="18" r="2" />
-                <circle cx="7" cy="18" r="2" />
+                {/* Car body (top-down view, pointing up) */}
+                <rect
+                  x="9"
+                  y="4"
+                  width="14"
+                  height="24"
+                  rx="5"
+                  fill="#1FD5F9"
+                />
+                {/* Windshield */}
+                <rect
+                  x="11"
+                  y="6"
+                  width="10"
+                  height="6"
+                  rx="2"
+                  fill="#0D9BBD"
+                />
+                {/* Rear window */}
+                <rect
+                  x="11"
+                  y="20"
+                  width="10"
+                  height="5"
+                  rx="2"
+                  fill="#0D9BBD"
+                />
+                {/* Left mirror */}
+                <rect
+                  x="6"
+                  y="10"
+                  width="3"
+                  height="4"
+                  rx="1.5"
+                  fill="#1FD5F9"
+                />
+                {/* Right mirror */}
+                <rect
+                  x="23"
+                  y="10"
+                  width="3"
+                  height="4"
+                  rx="1.5"
+                  fill="#1FD5F9"
+                />
+                {/* Headlights */}
+                <circle cx="12" cy="5" r="1.5" fill="#FFF" opacity="0.9" />
+                <circle cx="20" cy="5" r="1.5" fill="#FFF" opacity="0.9" />
+                {/* Taillights */}
+                <circle cx="12" cy="27" r="1.5" fill="#FF4444" opacity="0.8" />
+                <circle cx="20" cy="27" r="1.5" fill="#FF4444" opacity="0.8" />
               </svg>
             </div>
           </Marker>
         )}
 
-        {/* Route line */}
+        {/* Route glow — 3 overlapping layers */}
         {routeGeoJson && (
-          <Source id="route" type="geojson" data={routeGeoJson}>
+          <Source
+            id="route"
+            type="geojson"
+            data={routeGeoJson}
+            lineMetrics={true}
+          >
+            {/* Outer glow */}
             <Layer
-              id="route-line"
+              id="route-glow-outer"
               type="line"
               paint={{
-                "line-color": "#3b82f6",
-                "line-width": 4,
-                "line-opacity": 0.7,
+                "line-color": "#1FD5F9",
+                "line-width": 14,
+                "line-opacity": 0.15,
+                "line-blur": 8,
+              }}
+            />
+            {/* Core line */}
+            <Layer
+              id="route-glow-core"
+              type="line"
+              paint={{
+                "line-color": "#1FD5F9",
+                "line-width": 5,
+                "line-opacity": 0.6,
+                "line-blur": 1,
+              }}
+            />
+            {/* Bright highlight */}
+            <Layer
+              id="route-highlight"
+              type="line"
+              paint={{
+                "line-color": "#FFFFFF",
+                "line-width": 1.5,
+                "line-opacity": 0.8,
               }}
             />
           </Source>
