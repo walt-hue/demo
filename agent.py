@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -109,6 +110,17 @@ Confirm details back casually: "Okay so you're at the corner of 5th and Main, go
 VOICE SWITCHING:
 You can switch your voice if the caller asks. The available voices are: vespera (the default, warm female), arcade (energetic, upbeat), and eliphas (calm, steady). If the caller asks you to change your voice or sound different, use the switch_voice tool with the matching voice name. After switching, casually confirm the change like "Alright, how's this sound?" Keep it natural.
 
+MAP AND RIDE TOOLS:
+You have tools that control a live map the rider can see on their screen. Use them naturally during the conversation:
+- When the rider tells you where they are, call set_pickup_location with their address and approximate San Francisco coordinates.
+- When the rider mentions their destination, call set_dropoff_location with the address and coordinates.
+- After confirming both locations, simulate finding a driver. Call update_driver_status with status "en_route", a position a few blocks from pickup, and an ETA of 3-5 minutes.
+- After a brief pause, call update_driver_status again with status "arriving" and coordinates near the pickup.
+- When the rider confirms they see the driver or are getting in, call start_ride.
+- When the conversation wraps up or rider says they arrived, call complete_ride.
+
+Use realistic San Francisco coordinates. Examples: Ferry Building (37.7955, -122.3937), Union Square (37.7879, -122.4074), Fishermans Wharf (37.8080, -122.4177), Mission District (37.7599, -122.4148), SOMA (37.7785, -122.3950). Estimate reasonable coordinates for other locations.
+
 WHAT TO AVOID:
 - Never sound scripted or corporate
 - Never use long sentences or paragraph-length responses
@@ -134,6 +146,73 @@ WHAT TO AVOID:
             return f"Voice switched to {voice_name}."
 
         return "Could not switch voice — TTS not available."
+
+    async def _publish_map_update(self, action: str, data: dict | None = None) -> None:
+        """Publish a map update message to the room."""
+        payload = json.dumps({"action": action, "data": data or {}}).encode()
+        await self.session.room.local_participant.publish_data(
+            payload, reliable=True, topic="map_update"
+        )
+
+    @llm.function_tool()
+    async def set_pickup_location(self, address: str, latitude: float, longitude: float) -> str:
+        """Set the rider's pickup location on the map.
+
+        Args:
+            address: Street address or description of the pickup location.
+            latitude: Latitude coordinate (e.g. 37.7879 for Union Square).
+            longitude: Longitude coordinate (e.g. -122.4074 for Union Square).
+        """
+        await self._publish_map_update("set_pickup", {
+            "address": address, "lat": latitude, "lng": longitude,
+        })
+        logger.info("Pickup set: %s (%.4f, %.4f)", address, latitude, longitude)
+        return f"Pickup location set to {address}."
+
+    @llm.function_tool()
+    async def set_dropoff_location(self, address: str, latitude: float, longitude: float) -> str:
+        """Set the rider's dropoff/destination location on the map.
+
+        Args:
+            address: Street address or description of the destination.
+            latitude: Latitude coordinate.
+            longitude: Longitude coordinate.
+        """
+        await self._publish_map_update("set_dropoff", {
+            "address": address, "lat": latitude, "lng": longitude,
+        })
+        logger.info("Dropoff set: %s (%.4f, %.4f)", address, latitude, longitude)
+        return f"Dropoff location set to {address}."
+
+    @llm.function_tool()
+    async def update_driver_status(self, status: str, latitude: float, longitude: float, eta_minutes: int) -> str:
+        """Update the driver's status and position on the map.
+
+        Args:
+            status: Driver status — either "en_route" or "arriving".
+            latitude: Driver's current latitude.
+            longitude: Driver's current longitude.
+            eta_minutes: Estimated minutes until arrival at pickup.
+        """
+        await self._publish_map_update("update_driver", {
+            "status": status, "lat": latitude, "lng": longitude, "eta_minutes": eta_minutes,
+        })
+        logger.info("Driver update: status=%s pos=(%.4f, %.4f) eta=%dm", status, latitude, longitude, eta_minutes)
+        return f"Driver status updated to {status}, ETA {eta_minutes} minutes."
+
+    @llm.function_tool()
+    async def start_ride(self) -> str:
+        """Start the ride after the rider has been picked up."""
+        await self._publish_map_update("start_ride")
+        logger.info("Ride started")
+        return "Ride started."
+
+    @llm.function_tool()
+    async def complete_ride(self) -> str:
+        """Complete the ride when the rider has arrived at their destination."""
+        await self._publish_map_update("complete_ride")
+        logger.info("Ride completed")
+        return "Ride completed."
 
 
 def prewarm(proc: JobProcess) -> None:
