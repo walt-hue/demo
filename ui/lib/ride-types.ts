@@ -40,7 +40,6 @@ export interface RideState {
 }
 
 export interface MapUpdateMessage {
-  type: "map_update";
   action:
     | "set_pickup"
     | "set_dropoff"

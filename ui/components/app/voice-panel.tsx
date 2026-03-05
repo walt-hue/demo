@@ -8,7 +8,6 @@ import {
 } from "@livekit/components-react";
 import { AgentAudioVisualizerAura } from "@/components/agents-ui/agent-audio-visualizer-aura";
 import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcript";
-import { AgentControlBar } from "@/components/agents-ui/agent-control-bar";
 
 const VOICES = [
   { id: "vespera", label: "Vespera", desc: "Warm" },
@@ -24,6 +23,7 @@ export function VoicePanel({ onDisconnect }: VoicePanelProps) {
   const agent = useAgent();
   const { messages } = useSessionMessages();
   const [activeVoice, setActiveVoice] = useState("vespera");
+  const [expanded, setExpanded] = useState(false);
 
   // Detect voice switches from agent transcript
   useEffect(() => {
@@ -46,27 +46,70 @@ export function VoicePanel({ onDisconnect }: VoicePanelProps) {
 
   const stateLabel =
     agent.state === "listening"
-      ? "Listening..."
+      ? "Listening"
       : agent.state === "thinking"
-        ? "Thinking..."
+        ? "Thinking"
         : agent.state === "speaking"
-          ? "Speaking..."
+          ? "Speaking"
           : agent.state === "connecting"
-            ? "Connecting..."
+            ? "Connecting"
             : "";
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-20 flex max-h-[60vh] flex-col rounded-t-3xl border-t border-white/10 bg-black/70 backdrop-blur-xl">
-      {/* Drag handle */}
-      <div className="flex justify-center py-2">
-        <div className="h-1 w-10 rounded-full bg-white/20" />
-      </div>
+    <div className="absolute bottom-6 right-6 z-30 flex flex-col items-end gap-3">
+      {/* Expanded panel */}
+      {expanded && (
+        <div className="w-80 rounded-2xl border border-white/10 bg-black/80 backdrop-blur-xl">
+          {/* Transcript */}
+          <div className="max-h-52 overflow-y-auto p-3">
+            <AgentChatTranscript
+              agentState={agent.state}
+              messages={messages}
+              className="max-h-48"
+            />
+          </div>
 
-      {/* Visualizer */}
-      <div className="flex flex-col items-center gap-1 px-4 pb-2">
-        <div className="h-24 w-24">
+          {/* Voice pills */}
+          <div className="flex justify-center gap-1.5 border-t border-white/5 px-3 py-2">
+            {VOICES.map((v) => (
+              <div
+                key={v.id}
+                className={`rounded-md border px-2 py-1 text-center transition-all ${
+                  activeVoice === v.id
+                    ? "border-white/15 bg-white/8 opacity-100"
+                    : "border-white/5 bg-white/3 opacity-45"
+                }`}
+              >
+                <span className="text-[10px] font-medium text-white">
+                  {v.label}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Controls row */}
+          <div className="flex items-center justify-between border-t border-white/5 px-3 py-2">
+            <span className="text-[10px] text-zinc-500">
+              {stateLabel && `${stateLabel}...`}
+            </span>
+            <button
+              onClick={onDisconnect}
+              className="rounded-lg bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/30"
+            >
+              End
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating orb */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="group relative flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-black/70 shadow-2xl shadow-black/50 backdrop-blur-xl transition-all hover:border-white/20 hover:shadow-cyan-500/10"
+      >
+        <div className="h-14 w-14">
           <AgentAudioVisualizerAura
-            size="md"
+            size="sm"
             state={agent.state}
             color="#1FD5F9"
             colorShift={0.1}
@@ -74,53 +117,20 @@ export function VoicePanel({ onDisconnect }: VoicePanelProps) {
             audioTrack={agent.microphoneTrack}
           />
         </div>
-        {stateLabel && (
-          <span className="text-xs text-zinc-500">{stateLabel}</span>
-        )}
-      </div>
 
-      {/* Voice pills */}
-      <div className="flex justify-center gap-2 px-4 pb-2">
-        {VOICES.map((v) => (
-          <div
-            key={v.id}
-            className={`flex flex-col items-center rounded-lg border px-3 py-1.5 text-center transition-all ${
-              activeVoice === v.id
-                ? "border-white/15 bg-white/8 opacity-100"
-                : "border-white/5 bg-white/3 opacity-45"
-            }`}
-          >
-            <span className="text-xs font-semibold text-white">
-              {v.label}
-            </span>
-            <span className="text-[10px] text-zinc-500">{v.desc}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Transcript */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4">
-        <AgentChatTranscript
-          agentState={agent.state}
-          messages={messages}
-          className="max-h-40"
+        {/* State dot indicator */}
+        <div
+          className={`absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-black ${
+            agent.state === "speaking"
+              ? "bg-cyan-400"
+              : agent.state === "listening"
+                ? "bg-green-400"
+                : agent.state === "thinking"
+                  ? "bg-amber-400"
+                  : "bg-zinc-500"
+          }`}
         />
-      </div>
-
-      {/* Controls */}
-      <div className="px-4 pb-6 pt-2">
-        <AgentControlBar
-          variant="default"
-          controls={{
-            microphone: true,
-            camera: false,
-            screenShare: false,
-            chat: false,
-            leave: true,
-          }}
-          onDisconnect={onDisconnect}
-        />
-      </div>
+      </button>
     </div>
   );
 }

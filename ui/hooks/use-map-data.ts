@@ -21,9 +21,9 @@ export function useMapData(
 
       try {
         const text = new TextDecoder().decode(payload);
-        const data = JSON.parse(text) as MapUpdateMessage;
-        if (data.type === "map_update") {
-          onMapMessage(data);
+        const msg = JSON.parse(text) as MapUpdateMessage;
+        if (msg.action) {
+          onMapMessage(msg);
         }
       } catch {
         // Ignore non-JSON or non-map messages
