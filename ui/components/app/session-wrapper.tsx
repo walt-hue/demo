@@ -1,10 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
-import {
-  useSession,
-  useSessionContext,
-} from "@livekit/components-react";
+import { useSession } from "@livekit/components-react";
 import type { TokenSourceConfigurable } from "livekit-client";
 import { AgentSessionProvider } from "@/components/agents-ui/agent-session-provider";
 import { MapView } from "@/components/app/map-view";
@@ -58,13 +55,12 @@ export function SessionWrapper({
   );
 }
 
-/** Bridge component that hooks into the room's data events */
+/** Bridge component that uses useDataChannel (requires RoomContext from SessionProvider) */
 function MapDataBridge({
   onMapMessage,
 }: {
   onMapMessage: (msg: MapUpdateMessage) => void;
 }) {
-  const session = useSessionContext();
-  useMapData(session.room, onMapMessage);
+  useMapData(onMapMessage);
   return null;
 }

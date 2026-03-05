@@ -1,38 +1,20 @@
 "use client";
 
-import { useEffect } from "react";
-import { RoomEvent, type Room } from "livekit-client";
+import { useDataChannel } from "@livekit/components-react";
 import type { MapUpdateMessage } from "@/lib/ride-types";
 
 export function useMapData(
-  room: Room | undefined,
   onMapMessage: (msg: MapUpdateMessage) => void
 ) {
-  useEffect(() => {
-    if (!room) return;
-
-    const handleData = (
-      payload: Uint8Array,
-      _participant?: unknown,
-      _kind?: unknown,
-      topic?: string
-    ) => {
-      if (topic && topic !== "map_update") return;
-
-      try {
-        const text = new TextDecoder().decode(payload);
-        const msg = JSON.parse(text) as MapUpdateMessage;
-        if (msg.action) {
-          onMapMessage(msg);
-        }
-      } catch {
-        // Ignore non-JSON or non-map messages
+  useDataChannel("map_update", (msg) => {
+    try {
+      const text = new TextDecoder().decode(msg.payload);
+      const parsed = JSON.parse(text) as MapUpdateMessage;
+      if (parsed.action) {
+        onMapMessage(parsed);
       }
-    };
-
-    room.on(RoomEvent.DataReceived, handleData);
-    return () => {
-      room.off(RoomEvent.DataReceived, handleData);
-    };
-  }, [room, onMapMessage]);
+    } catch {
+      // Ignore non-JSON messages
+    }
+  });
 }

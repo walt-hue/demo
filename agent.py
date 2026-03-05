@@ -150,7 +150,7 @@ WHAT TO AVOID:
     async def _publish_map_update(self, action: str, data: dict | None = None) -> None:
         """Publish a map update message to the room."""
         payload = json.dumps({"action": action, "data": data or {}}).encode()
-        await self.session.room.local_participant.publish_data(
+        await self.session.room_io.room.local_participant.publish_data(
             payload, reliable=True, topic="map_update"
         )
 
