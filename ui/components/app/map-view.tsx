@@ -39,17 +39,33 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
     return null;
   }, [pickup, dropoff]);
 
-  // Configure 3D buildings and dusk lighting on map load
+  // Configure 3D buildings, night lighting, fog, and hide POI labels
   const handleMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (!map) return;
     mapLoadedRef.current = true;
 
-    // Set dusk lighting for dramatic dark look
     try {
-      map.setConfigProperty("basemap", "lightPreset", "dusk");
+      // Night preset for maximum 3D building contrast
+      map.setConfigProperty("basemap", "lightPreset", "night");
+      // Hide POI labels to declutter
+      map.setConfigProperty("basemap", "showPointOfInterestLabels", false);
+      map.setConfigProperty("basemap", "showTransitLabels", false);
     } catch {
-      // Fallback if config properties not supported
+      // Fallback for older Mapbox versions
+    }
+
+    // Atmospheric fog for cinematic depth
+    try {
+      map.setFog({
+        color: "rgb(10, 10, 30)",
+        "high-color": "rgb(20, 20, 60)",
+        "horizon-blend": 0.08,
+        "space-color": "rgb(5, 5, 15)",
+        "star-intensity": 0.4,
+      });
+    } catch {
+      // Fog not supported
     }
   }, []);
 
@@ -70,11 +86,11 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
       const lats = [pickup.lat, dropoff.lat];
       map.fitBounds(
         [
-          [Math.min(...lngs) - 0.005, Math.min(...lats) - 0.005],
-          [Math.max(...lngs) + 0.005, Math.max(...lats) + 0.005],
+          [Math.min(...lngs) - 0.008, Math.min(...lats) - 0.008],
+          [Math.max(...lngs) + 0.008, Math.max(...lats) + 0.008],
         ],
         {
-          padding: { top: 120, bottom: 120, left: 60, right: 60 },
+          padding: { top: 140, bottom: 140, left: 80, right: 80 },
           pitch: cam.pitch,
           bearing: cam.bearing,
           duration: cam.duration,
@@ -101,9 +117,9 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
     map.easeTo({
       center: [driver.lng, driver.lat],
       bearing: driver.bearing,
-      pitch: 60,
-      zoom: 17,
-      duration: 300,
+      pitch: 65,
+      zoom: 17.5,
+      duration: 350,
     });
   }, [phase, driver?.lat, driver?.lng, driver?.bearing]);
 
@@ -123,7 +139,7 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
         onLoad={handleMapLoad}
         maxPitch={85}
       >
-        {/* Pickup marker — green pulsing dot */}
+        {/* ═══ PICKUP MARKER ═══ */}
         {pickup && (
           <Marker
             longitude={pickup.lng}
@@ -131,13 +147,22 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             anchor="center"
           >
             <div className="relative flex items-center justify-center">
-              <div className="pickup-pulse absolute h-8 w-8 rounded-full bg-emerald-400/40" />
-              <div className="h-4 w-4 rounded-full border-2 border-white bg-emerald-400 shadow-lg shadow-emerald-400/50" />
+              {/* Outer pulse ring */}
+              <div className="pickup-pulse absolute h-16 w-16 rounded-full border-2 border-emerald-400/60" />
+              {/* Middle pulse ring */}
+              <div
+                className="pickup-pulse absolute h-12 w-12 rounded-full bg-emerald-400/20"
+                style={{ animationDelay: "0.5s" }}
+              />
+              {/* Glow halo */}
+              <div className="absolute h-8 w-8 rounded-full bg-emerald-400/30 blur-md" />
+              {/* Core dot */}
+              <div className="relative h-5 w-5 rounded-full border-[3px] border-white bg-emerald-400 shadow-[0_0_16px_4px_rgba(52,211,153,0.5)]" />
             </div>
           </Marker>
         )}
 
-        {/* Dropoff marker — red pin with glow */}
+        {/* ═══ DROPOFF MARKER ═══ */}
         {dropoff && (
           <Marker
             longitude={dropoff.lng}
@@ -145,13 +170,21 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             anchor="bottom"
           >
             <div className="flex flex-col items-center">
-              <div className="h-6 w-6 rounded-full border-2 border-white bg-red-500 shadow-lg shadow-red-500/50" />
-              <div className="h-3 w-0.5 bg-white/60" />
+              {/* Glow behind */}
+              <div className="absolute -top-1 h-10 w-10 rounded-full bg-red-500/25 blur-lg" />
+              {/* Pin head */}
+              <div className="relative h-8 w-8 rounded-full border-[3px] border-white bg-red-500 shadow-[0_0_20px_6px_rgba(239,68,68,0.4)]">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-2 w-2 rounded-full bg-white/80" />
+                </div>
+              </div>
+              {/* Pin stem */}
+              <div className="h-4 w-1 rounded-b-full bg-gradient-to-b from-white/80 to-white/20" />
             </div>
           </Marker>
         )}
 
-        {/* Car marker — top-down car SVG with rotation */}
+        {/* ═══ CAR MARKER ═══ */}
         {driver && driver.status !== "completed" && (
           <Marker
             longitude={driver.lng}
@@ -159,77 +192,188 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             anchor="center"
           >
             <div
-              className="car-marker car-glow flex items-center justify-center rounded-full"
+              className="car-marker relative flex items-center justify-center"
               style={{
                 transform: `rotate(${driver.bearing}deg)`,
-                width: 40,
-                height: 40,
+                width: 64,
+                height: 64,
               }}
             >
+              {/* Large glow halo */}
+              <div className="car-glow absolute inset-0 rounded-full bg-cyan-400/10 blur-xl" />
+              {/* Medium glow */}
+              <div className="absolute inset-2 rounded-full bg-cyan-400/15 blur-md" />
+
+              {/* Car SVG — larger, more detailed */}
               <svg
-                width="32"
-                height="32"
-                viewBox="0 0 32 32"
+                width="48"
+                height="48"
+                viewBox="0 0 48 48"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
+                className="relative drop-shadow-[0_0_12px_rgba(31,213,249,0.6)]"
               >
-                {/* Car body (top-down view, pointing up) */}
+                {/* Shadow under car */}
+                <ellipse
+                  cx="24"
+                  cy="24"
+                  rx="14"
+                  ry="18"
+                  fill="black"
+                  opacity="0.3"
+                />
+                {/* Car body */}
                 <rect
-                  x="9"
+                  x="12"
                   y="4"
-                  width="14"
-                  height="24"
-                  rx="5"
+                  width="24"
+                  height="40"
+                  rx="8"
                   fill="#1FD5F9"
+                />
+                {/* Body highlight */}
+                <rect
+                  x="14"
+                  y="4"
+                  width="10"
+                  height="40"
+                  rx="6"
+                  fill="#4DE4FF"
+                  opacity="0.3"
                 />
                 {/* Windshield */}
                 <rect
-                  x="11"
-                  y="6"
-                  width="10"
-                  height="6"
+                  x="15"
+                  y="8"
+                  width="18"
+                  height="10"
+                  rx="4"
+                  fill="#0A7A99"
+                />
+                {/* Windshield reflection */}
+                <rect
+                  x="17"
+                  y="9"
+                  width="8"
+                  height="5"
                   rx="2"
-                  fill="#0D9BBD"
+                  fill="#1FD5F9"
+                  opacity="0.3"
                 />
                 {/* Rear window */}
                 <rect
-                  x="11"
-                  y="20"
-                  width="10"
-                  height="5"
-                  rx="2"
+                  x="15"
+                  y="30"
+                  width="18"
+                  height="9"
+                  rx="4"
+                  fill="#0A7A99"
+                />
+                {/* Left wheel well */}
+                <rect
+                  x="8"
+                  y="12"
+                  width="5"
+                  height="8"
+                  rx="2.5"
                   fill="#0D9BBD"
                 />
-                {/* Left mirror */}
+                {/* Right wheel well */}
                 <rect
-                  x="6"
-                  y="10"
-                  width="3"
-                  height="4"
-                  rx="1.5"
-                  fill="#1FD5F9"
+                  x="35"
+                  y="12"
+                  width="5"
+                  height="8"
+                  rx="2.5"
+                  fill="#0D9BBD"
                 />
-                {/* Right mirror */}
+                {/* Left rear wheel */}
                 <rect
-                  x="23"
-                  y="10"
-                  width="3"
-                  height="4"
-                  rx="1.5"
-                  fill="#1FD5F9"
+                  x="8"
+                  y="28"
+                  width="5"
+                  height="8"
+                  rx="2.5"
+                  fill="#0D9BBD"
+                />
+                {/* Right rear wheel */}
+                <rect
+                  x="35"
+                  y="28"
+                  width="5"
+                  height="8"
+                  rx="2.5"
+                  fill="#0D9BBD"
                 />
                 {/* Headlights */}
-                <circle cx="12" cy="5" r="1.5" fill="#FFF" opacity="0.9" />
-                <circle cx="20" cy="5" r="1.5" fill="#FFF" opacity="0.9" />
+                <circle cx="17" cy="6" r="2.5" fill="#FFFFFF" />
+                <circle cx="31" cy="6" r="2.5" fill="#FFFFFF" />
+                {/* Headlight glow */}
+                <circle
+                  cx="17"
+                  cy="6"
+                  r="4"
+                  fill="#FFFFFF"
+                  opacity="0.15"
+                />
+                <circle
+                  cx="31"
+                  cy="6"
+                  r="4"
+                  fill="#FFFFFF"
+                  opacity="0.15"
+                />
                 {/* Taillights */}
-                <circle cx="12" cy="27" r="1.5" fill="#FF4444" opacity="0.8" />
-                <circle cx="20" cy="27" r="1.5" fill="#FF4444" opacity="0.8" />
+                <rect
+                  x="14"
+                  y="41"
+                  width="6"
+                  height="3"
+                  rx="1.5"
+                  fill="#FF3333"
+                />
+                <rect
+                  x="28"
+                  y="41"
+                  width="6"
+                  height="3"
+                  rx="1.5"
+                  fill="#FF3333"
+                />
+                {/* Taillight glow */}
+                <rect
+                  x="13"
+                  y="40"
+                  width="8"
+                  height="5"
+                  rx="2"
+                  fill="#FF3333"
+                  opacity="0.2"
+                />
+                <rect
+                  x="27"
+                  y="40"
+                  width="8"
+                  height="5"
+                  rx="2"
+                  fill="#FF3333"
+                  opacity="0.2"
+                />
+                {/* Roof detail */}
+                <rect
+                  x="18"
+                  y="20"
+                  width="12"
+                  height="8"
+                  rx="3"
+                  fill="#15B8D6"
+                />
               </svg>
             </div>
           </Marker>
         )}
 
-        {/* Route glow — 3 overlapping layers */}
+        {/* ═══ ROUTE GLOW — 3 overlapping layers ═══ */}
         {routeGeoJson && (
           <Source
             id="route"
@@ -237,15 +381,26 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
             data={routeGeoJson}
             lineMetrics={true}
           >
-            {/* Outer glow */}
+            {/* Wide outer glow */}
             <Layer
               id="route-glow-outer"
               type="line"
               paint={{
                 "line-color": "#1FD5F9",
-                "line-width": 14,
-                "line-opacity": 0.15,
-                "line-blur": 8,
+                "line-width": 20,
+                "line-opacity": 0.12,
+                "line-blur": 12,
+              }}
+            />
+            {/* Medium glow */}
+            <Layer
+              id="route-glow-mid"
+              type="line"
+              paint={{
+                "line-color": "#1FD5F9",
+                "line-width": 10,
+                "line-opacity": 0.25,
+                "line-blur": 4,
               }}
             />
             {/* Core line */}
@@ -254,19 +409,18 @@ export function MapView({ rideState, dimmed }: MapViewProps) {
               type="line"
               paint={{
                 "line-color": "#1FD5F9",
-                "line-width": 5,
-                "line-opacity": 0.6,
-                "line-blur": 1,
+                "line-width": 4,
+                "line-opacity": 0.8,
               }}
             />
-            {/* Bright highlight */}
+            {/* Bright highlight center */}
             <Layer
               id="route-highlight"
               type="line"
               paint={{
                 "line-color": "#FFFFFF",
                 "line-width": 1.5,
-                "line-opacity": 0.8,
+                "line-opacity": 0.6,
               }}
             />
           </Source>

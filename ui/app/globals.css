@@ -28,39 +28,44 @@ body {
   display: none !important;
 }
 
-/* Car marker smooth rotation */
+/* ═══ Car marker ═══ */
 .car-marker {
-  transition: transform 0.3s ease-out;
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   will-change: transform;
 }
 
-/* Car glow pulse */
+/* Car glow — breathing pulse */
 @keyframes car-glow {
   0%,
   100% {
-    box-shadow: 0 0 12px 4px rgba(31, 213, 249, 0.3);
+    box-shadow:
+      0 0 20px 8px rgba(31, 213, 249, 0.25),
+      0 0 40px 16px rgba(31, 213, 249, 0.1);
   }
   50% {
-    box-shadow: 0 0 20px 8px rgba(31, 213, 249, 0.5);
+    box-shadow:
+      0 0 30px 12px rgba(31, 213, 249, 0.4),
+      0 0 60px 24px rgba(31, 213, 249, 0.15);
   }
 }
 
 .car-glow {
-  animation: car-glow 2s ease-in-out infinite;
+  animation: car-glow 2.5s ease-in-out infinite;
+  border-radius: 50%;
 }
 
-/* Pickup pulse */
+/* ═══ Pickup pulse rings ═══ */
 @keyframes pickup-pulse {
   0% {
-    transform: scale(1);
-    opacity: 0.6;
+    transform: scale(0.5);
+    opacity: 0.8;
   }
   100% {
-    transform: scale(2.5);
+    transform: scale(3);
     opacity: 0;
   }
 }
 
 .pickup-pulse {
-  animation: pickup-pulse 2s ease-out infinite;
+  animation: pickup-pulse 2.5s ease-out infinite;
 }

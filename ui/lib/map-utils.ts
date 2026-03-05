@@ -17,15 +17,15 @@ export function generateRouteGeoJson(
   pickup: PickupLocation,
   dropoff: DropoffLocation
 ): GeoJSON.FeatureCollection {
-  const steps = 40;
+  const steps = 50;
   const coords: [number, number][] = [];
 
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const lat = pickup.lat + (dropoff.lat - pickup.lat) * t;
     const lng = pickup.lng + (dropoff.lng - pickup.lng) * t;
-    // Add slight curve offset
-    const offset = Math.sin(t * Math.PI) * 0.002;
+    // Add slight curve offset for realistic road feel
+    const offset = Math.sin(t * Math.PI) * 0.003;
     coords.push([lng + offset, lat]);
   }
 
@@ -134,6 +134,7 @@ export function generateDriverInfo(): DriverInfo {
 
 /**
  * Get the camera config for a given ride phase.
+ * Designed for dramatic cinematic 3D effect.
  */
 export function getCameraForPhase(
   phase: RidePhase,
@@ -145,20 +146,20 @@ export function getCameraForPhase(
     case "idle":
       return {
         center: [-122.4194, 37.7749],
-        zoom: 13,
-        pitch: 0,
-        bearing: 0,
-        duration: 2000,
+        zoom: 14,
+        pitch: 45,
+        bearing: -15,
+        duration: 2500,
       };
 
     case "pickup_set":
       if (!pickup) return null;
       return {
         center: [pickup.lng, pickup.lat],
-        zoom: 16,
-        pitch: 45,
-        bearing: -20,
-        duration: 2000,
+        zoom: 17,
+        pitch: 60,
+        bearing: -30,
+        duration: 2500,
       };
 
     case "route_set":
@@ -168,30 +169,30 @@ export function getCameraForPhase(
           (pickup.lng + dropoff.lng) / 2,
           (pickup.lat + dropoff.lat) / 2,
         ],
-        zoom: 14,
-        pitch: 30,
-        bearing: 0,
-        duration: 2000,
+        zoom: 14.5,
+        pitch: 50,
+        bearing: 15,
+        duration: 2500,
       };
 
     case "driver_assigned":
       if (!pickup) return null;
       return {
         center: [pickup.lng, pickup.lat],
-        zoom: 15.5,
-        pitch: 45,
-        bearing: -10,
-        duration: 1500,
+        zoom: 16.5,
+        pitch: 55,
+        bearing: -20,
+        duration: 2000,
       };
 
     case "driver_arriving":
       if (!driver) return null;
       return {
         center: [driver.lng, driver.lat],
-        zoom: 16.5,
-        pitch: 50,
-        bearing: driver.bearing,
-        duration: 1200,
+        zoom: 17.5,
+        pitch: 60,
+        bearing: driver.bearing - 30,
+        duration: 1500,
       };
 
     case "in_ride":
@@ -199,20 +200,20 @@ export function getCameraForPhase(
       if (!driver) return null;
       return {
         center: [driver.lng, driver.lat],
-        zoom: 17,
-        pitch: 60,
+        zoom: 17.5,
+        pitch: 65,
         bearing: driver.bearing,
-        duration: 1500,
+        duration: 2000,
       };
 
     case "completed":
       if (!dropoff) return null;
       return {
         center: [dropoff.lng, dropoff.lat],
-        zoom: 15,
-        pitch: 30,
-        bearing: 0,
-        duration: 2000,
+        zoom: 16,
+        pitch: 45,
+        bearing: 20,
+        duration: 2500,
       };
 
     default:
