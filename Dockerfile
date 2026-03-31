@@ -49,7 +49,7 @@ RUN mkdir -p src
 RUN uv sync --locked
 
 # Change this value to force a full rebuild when cloud deploy doesn't pick up code changes (e.g. 20250210)
-ARG CACHEBUST=1
+ARG CACHEBUST=20260210
 
 # Copy all remaining application files into the container
 # This includes source code, configuration files, and dependency specifications

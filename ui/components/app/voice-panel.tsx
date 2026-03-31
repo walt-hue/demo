@@ -10,9 +10,7 @@ import { AgentAudioVisualizerAura } from "@/components/agents-ui/agent-audio-vis
 import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcript";
 
 const VOICES = [
-  { id: "vespera", label: "Vespera", desc: "Warm" },
-  { id: "arcade", label: "Arcade", desc: "Energetic" },
-  { id: "eliphas", label: "Eliphas", desc: "Calm" },
+  { id: "hardy-vo_jade", label: "Jade", desc: "Active" },
 ] as const;
 
 interface VoicePanelProps {
@@ -22,7 +20,7 @@ interface VoicePanelProps {
 export function VoicePanel({ onDisconnect }: VoicePanelProps) {
   const agent = useAgent();
   const { messages } = useSessionMessages();
-  const [activeVoice, setActiveVoice] = useState("vespera");
+  const [activeVoice, setActiveVoice] = useState("hardy-vo_jade");
   const [expanded, setExpanded] = useState(false);
 
   // Detect voice switches from agent transcript

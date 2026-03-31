@@ -18,15 +18,9 @@ from livekit.agents import (
     room_io,
     MetricsCollectedEvent,
 )
-from livekit.plugins import noise_cancellation, rime, silero
+from livekit.plugins import noise_cancellation, silero
+from etna_tts import EtnaTTS
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
-
-AVAILABLE_VOICES = {
-    "vespera": "Vespera — the default warm female voice",
-    "arcade": "Arcade — an energetic, upbeat voice",
-    "eliphas": "Eliphas — a calm, steady voice",
-}
-DEFAULT_VOICE = "vespera"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-agent")
@@ -107,9 +101,6 @@ Help the rider connect with their driver. To do that you may need:
 
 Confirm details back casually: "Okay so you're at the corner of 5th and Main, got it." Then let them know what happens next, like "Alright, so I'm gonna get this over to your driver right now."
 
-VOICE SWITCHING:
-You can switch your voice if the caller asks. The available voices are: vespera (the default, warm female), arcade (energetic, upbeat), and eliphas (calm, steady). If the caller asks you to change your voice or sound different, use the switch_voice tool with the matching voice name. After switching, casually confirm the change like "Alright, how's this sound?" Keep it natural.
-
 MAP AND RIDE TOOLS:
 You have tools that control a live map the rider can see on their screen. Use them naturally during the conversation:
 - When the rider tells you where they are, call set_pickup_location with their address and approximate San Francisco coordinates.
@@ -127,25 +118,6 @@ WHAT TO AVOID:
 - Never say "I'd be happy to assist" or "Thank you for your patience" or any generic support phrases
 - Never use markdown, bullet points, or any text formatting""",
         )
-
-    @llm.function_tool()
-    async def switch_voice(self, voice_name: str) -> str:
-        """Switch the speaking voice. Available voices: vespera (warm female, default), arcade (energetic, upbeat), eliphas (calm, steady).
-
-        Args:
-            voice_name: The voice to switch to. Must be one of: vespera, arcade, eliphas.
-        """
-        voice_name = voice_name.strip().lower()
-        if voice_name not in AVAILABLE_VOICES:
-            return f"Unknown voice '{voice_name}'. Available voices: {', '.join(AVAILABLE_VOICES.keys())}"
-
-        tts_instance = self.session.tts
-        if tts_instance and isinstance(tts_instance, rime.TTS):
-            tts_instance.update_options(speaker=voice_name)
-            logger.info("Voice switched to: %s", voice_name)
-            return f"Voice switched to {voice_name}."
-
-        return "Could not switch voice — TTS not available."
 
     async def _publish_map_update(self, action: str, data: dict | None = None) -> None:
         """Publish a map update message to the room."""
@@ -220,27 +192,27 @@ def prewarm(proc: JobProcess) -> None:
 
 
 async def entrypoint(ctx: JobContext) -> None:
+    logger.info("===== ENTRYPOINT CALLED room=%s =====", ctx.room.name)
     ctx.log_context_fields = {"room": ctx.room.name}
 
-    base_url = _env_get("RIME_BASE_URL", "https://users-east.rime.ai/v1/rime-tts")
+    base_url = _env_get("RIME_BASE_URL", "http://192.222.55.160:8080/invocations")
     api_key = _env_get("RIME_API_KEY")
     if not api_key:
         raise ValueError("RIME_API_KEY is required. Add it to .env.local next to agent.py.")
 
-    rime_model = "arcanav2"
-    rime_speaker = "vespera"
-    logger.info("Rime TTS: model=%s speaker=%s base_url=%s", rime_model, rime_speaker, base_url)
+    etna_model = "etna"
+    etna_speaker = "hardy-vo_jade"
+    logger.info("Etna TTS: model=%s speaker=%s base_url=%s", etna_model, etna_speaker, base_url)
 
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         stt=inference.STT(model="deepgram/nova-3-general", language="multi"),
         llm=inference.LLM(model="openai/gpt-4.1-mini"),
-        tts=rime.TTS(
-            model=rime_model,
-            speaker=rime_speaker,
-            speed_alpha=0.9,
+        tts=EtnaTTS(
             base_url=base_url,
             api_key=api_key,
+            model=etna_model,
+            speaker=etna_speaker,
         ),
         turn_detection=MultilingualModel(),
     )
